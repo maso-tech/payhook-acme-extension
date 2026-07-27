@@ -1,31 +1,23 @@
-import {
-  PayhookClient,
-  UpgradeButton,
-  createChromeAdapters
-} from '@payhook/extension'
-import { ACCOUNT_ID, PRODUCT_IDS, TEST_MODE } from './config.js'
-
-const adapters = createChromeAdapters()
-const client = new PayhookClient({
-  accountId: ACCOUNT_ID,
-  productIds: PRODUCT_IDS,
-  testMode: TEST_MODE,
-  ...adapters
-})
-
-await client.init()
-
-const version = chrome.runtime.getManifest().version
-
-new UpgradeButton(client, {
-  version,
-  billing: { returnUrl: 'https://acme.example' },
-  labels: { upgrade: 'Upgrade to Pro', manage: 'Manage plan', pro: "You're Pro" }
-}).mount('#payhook-button')
+function sendCommand (command) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ command }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message))
+        return
+      }
+      if (response?.error) {
+        reject(new Error(response.error))
+        return
+      }
+      resolve(response)
+    })
+  })
+}
 
 const inputEl = document.getElementById('input')
 const outputEl = document.getElementById('output')
 const lockBadge = document.getElementById('lock-state')
+const payhookButton = document.getElementById('payhook-button')
 const toolButtons = Array.from(document.querySelectorAll('.tool'))
 
 const TOOLS = {
@@ -36,26 +28,47 @@ const TOOLS = {
   title: (s) => s.replace(/\w\S*/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase())
 }
 
+let accessActive = false
+
 function refreshLockState () {
-  const { active } = client.getEntitlement()
-  if (lockBadge) lockBadge.hidden = active
+  if (lockBadge) lockBadge.hidden = accessActive
   toolButtons.forEach((btn) => {
     if (btn.dataset.requiresPro !== undefined) {
-      btn.dataset.locked = String(!active)
+      btn.dataset.locked = String(!accessActive)
     }
   })
+  if (payhookButton) {
+    payhookButton.textContent = accessActive ? 'Manage plan' : 'Upgrade to Pro'
+  }
+}
+
+async function refreshAccess () {
+  const state = await sendCommand('get-access-state')
+  accessActive = state?.active === true
+  refreshLockState()
 }
 
 toolButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
     const requiresPro = btn.dataset.requiresPro !== undefined
-    const { active } = client.getEntitlement()
-    if (requiresPro && !active) return
+    if (requiresPro && !accessActive) return
 
     const fn = TOOLS[btn.dataset.tool]
     outputEl.value = fn ? fn(inputEl.value || '') : ''
   })
 })
 
-client.onEntitlementChange(refreshLockState)
-refreshLockState()
+payhookButton?.addEventListener('click', async () => {
+  try {
+    if (accessActive) {
+      await sendCommand('open-payhook-manage-plan')
+    } else {
+      await sendCommand('open-payhook-unlock')
+    }
+    await refreshAccess()
+  } catch (error) {
+    console.error(error)
+  }
+})
+
+refreshAccess().catch((error) => console.error(error))

@@ -1,9 +1,10 @@
 # Acme — Payhook sample extension
 
 A minimal Manifest V3 **cross-browser** sample extension showcasing the
-[`@payhook/extension`](https://www.npmjs.com/package/@payhook/extension)
-`UpgradeButton`. Acme is a tiny "text utilities" popup: a few free
-tools, three Pro-locked tools, and the Payhook button at the bottom.
+recommended [`@payhook/extension`](https://www.npmjs.com/package/@payhook/extension)
+**background `PayhookSession`** integration. Acme is a tiny "text utilities"
+popup: a few free tools, three Pro-locked tools, and an Upgrade / Manage plan
+button that messages the background session.
 
 **Marketing page:** [payhook.link/acme-extension/](https://payhook.link/acme-extension/)
 
@@ -13,27 +14,26 @@ One source tree builds for **Chrome**, **Firefox**, and **Safari**.
 
 ## What this demonstrates
 
-- Background service worker (event page on Firefox) holds a
-  `PayhookClient` and reflects the entitlement state as the extension
-  action badge (`PRO` when active).
-- Popup mounts the Payhook `UpgradeButton` — it cycles through
-  `Loading… → Upgrade → Opening… → Manage plan` as the user pays.
-- Pro tools (`Base64`, `Slug`, `Title Case`) are gated client-side by
-  `client.getEntitlement().active` and refresh on
-  `client.onEntitlementChange(...)`.
+- Background service worker (event page on Firefox) holds one headless
+  `PayhookSession` and reflects entitlement state as the action badge (`PRO`
+  when active).
+- Popup asks the background for `get-access-state`, `open-payhook-unlock`, and
+  `open-payhook-manage-plan` — matching the Payhook extension integration guide.
+- Hosted unlock success notifies the extension via `externally_connectable`
+  (`payhook:checkout-complete`), then the background pulls again.
+- Pro tools (`Base64`, `Slug`, `Title Case`) are gated from the access snapshot.
 
 ## Setup
 
 1. Set your Payhook values in `src/config.js`:
 
    ```js
-   export const ACCOUNT_ID = 'acct_xxx'
-   export const PRODUCT_IDS = ['prod_xxx']
+   export const API_KEY = 'phk_test_xxx'
    export const TEST_MODE = true
    ```
 
-   Get these from [dashboard.payhook.link](https://dashboard.payhook.link).
-   Use **test-mode** Stripe product IDs while `TEST_MODE` is `true`.
+   Create a publishable key in [dashboard.payhook.link](https://dashboard.payhook.link).
+   Prefer `phk_*` keys over Stripe account ids.
 
 2. Build:
 
@@ -73,7 +73,7 @@ One source tree builds for **Chrome**, **Firefox**, and **Safari**.
 
 4. Click the Acme icon, paste some text, and click **Upgrade to Pro**.
    The hosted unlock page at [unlock.payhook.link](https://unlock.payhook.link) opens; complete checkout (use Stripe's test
-   card `4242 4242 4242 4242` while in test mode). When you close it,
+   card `4242 4242 4242 4242` while in test mode). When checkout completes,
    the button flips to **Manage plan** and the Pro tools unlock.
 
 ## Iterating
@@ -90,8 +90,8 @@ each rebuild (Chrome: card's **Reload** button; Firefox: **Reload** on
 ## Cross-browser notes
 
 - **Storage / windows / runtime APIs** — Firefox and Safari expose the
-  same `chrome.*` namespace as Chrome, so `createChromeAdapters()`
-  works unchanged on all three.
+  same `chrome.*` namespace as Chrome, so the SDK Chrome adapters
+  work unchanged on all three.
 - **Identity** — `chrome.identity.getProfileUserInfo` only exists in
   Chromium. The adapter returns `null` on Firefox/Safari, and the
   build strips the `identity` permission from the Firefox manifest to
@@ -110,11 +110,11 @@ each rebuild (Chrome: card's **Reload** button; Firefox: **Reload** on
 ```
 src/
   manifest.json   shared MV3 manifest (Chrome shape)
-  background.js   service worker / event page — PayhookClient + badge
+  background.js   PayhookSession owner — badge + message handlers
   popup.html      popup markup
-  popup.css       popup styles + inlined upgrade-button.css
-  popup.js        popup logic — mounts UpgradeButton, gates Pro tools
-  config.js       your account + product IDs
+  popup.css       popup styles
+  popup.js        popup logic — messages background, gates Pro tools
+  config.js       publishable API key + test mode
 build.mjs         esbuild bundling + per-browser manifest patching
 dist/
   chrome/         load in chrome://extensions

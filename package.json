@@ -12,7 +12,7 @@
     "watch": "node build.mjs --watch"
   },
   "dependencies": {
-    "@payhook/extension": "^0.3.1"
+    "@payhook/extension": "^0.5.0"
   },
   "devDependencies": {
     "esbuild": "^0.28.0"
